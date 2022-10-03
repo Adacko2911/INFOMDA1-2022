@@ -11,6 +11,7 @@ library(tidyverse)
 library(magrittr)
 library(here)
 library(gridExtra)
+library(ggpubr)
 
 options(dplyr.summarise.inform = FALSE)
 ```
@@ -26,6 +27,7 @@ head(data)
 
 ### In this part I would like to decode the missing name of the factors to Unknown or somthing more informative
 ```{r}
+data[data==""]<-"Unknown"
 #to limit ourselves 
 #remove to specific information and duplicates
 data %<>% mutate("AircraftType"=case_when(Airplane=="True"~"Airplane",
@@ -33,15 +35,23 @@ data %<>% mutate("AircraftType"=case_when(Airplane=="True"~"Airplane",
                 "WeightCat"=case_when(Over5700=="True"~">5700",
                                         Over2250=="False" ~ "<2250",
                                         Over2250=="True" & Over5700=="False" ~"2250-5700"))%>% 
-  select(!c("Location","Operator","Date","Model","StateOfOperator","Class","ScheduledCommercial","Official","OccCats","Over2250","Over5700","Helicopter","Airplane","Registration","X")) %>% mutate_if(is.character, as.factor) 
+  select(!c("Location","Operator","Date","Model","StateOfOperator","Class",
+            "ScheduledCommercial","Official","OccCats","Over2250","Over5700",
+            "Helicopter","Airplane","Registration","X")) %>%
+  mutate_if(is.character, as.factor) 
+# 
+# 
+# levels(data$Risk)[1]<-"Unknown"
+# levels(data$StateOfOccurrence)[1]<-"Unknown"
+# levels(data$StateOfRegistry)[1]<-"Unknown"
+# levels(data$FlightPhase)[1]<-"Unknown"
+# levels(data$InjuryLevel)[1]<-"Unknown"
 
-levels(data$Risk)[1]<-"Unknown"
-levels(data$StateOfOccurrence)[1]<-"Unknown"
-levels(data$StateOfRegistry)[1]<-"Unknown"
-levels(data$FlightPhase)[1]<-"Unknown"
-levels(data$InjuryLevel)[1]<-"Unknown"
+#sort levels of injury in increasing order
+data$InjuryLevel<-factor(data$InjuryLevel, levels=c("Fatal","Serious","Minor","None","Unknown"))
 
 str(data)
+
 
 
 ```
@@ -77,9 +87,12 @@ frq.flightPhase.by.InjuryLevel<-data %>% group_by(FlightPhase, InjuryLevel) %>%
 #plots
 
 # frequency of accidents by flight phase (Landing, Take-off, etc.) grouped by aircraft type (Airplane, Helicopter)
-FlightPhase.order.ap<-data %>%subset(AircraftType=="Airplane") %>% group_by(FlightPhase) %>% 
+FlightPhase.order.ap<-data %>%subset(AircraftType=="Airplane") %>% 
+  group_by(FlightPhase) %>% 
   summarise(count=n()) %>% 
-  arrange(.,count) %$% FlightPhase
+  arrange(.,count) %$%
+  FlightPhase
+
 FlightPhase.order.hel<-data %>%subset(AircraftType=="Helicopter") %>% group_by(FlightPhase) %>% 
   summarise(count=n()) %>% 
   arrange(.,count) %$% FlightPhase
@@ -91,7 +104,9 @@ data %>%subset(AircraftType=="Airplane") %>% ggplot( aes(x=factor(FlightPhase, F
   geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
                    y= (..count..)/sum(..count..) ), stat= "count",hjust=-0.25) +
   labs(x = "Flight Phase", y="Percentage", title = "Airplane")+theme_minimal()
-data %>%subset(AircraftType=="Helicopter") %>% ggplot( aes(x=factor(FlightPhase, FlightPhase.order.hel))) + 
+
+data %>%subset(AircraftType=="Helicopter") %>% 
+  ggplot( aes(x=factor(FlightPhase, FlightPhase.order.hel))) + 
   geom_bar(aes(y = (..count..)/sum(..count..)))+
   coord_flip() +
   scale_y_continuous(labels=scales::percent,limits=c(0,0.40))+
@@ -102,34 +117,171 @@ data %>%subset(AircraftType=="Helicopter") %>% ggplot( aes(x=factor(FlightPhase,
 #checks of hte numbers -- correct 
 subset(data, AircraftType=="Airplane" & FlightPhase=="Take-off") %>% nrow / subset(data, AircraftType=="Airplane") %>% nrow
 subset(data, AircraftType=="Helicopter" & FlightPhase=="Take-off") %>% nrow / subset(data, AircraftType=="Helicopter") %>% nrow
+save(data, file = "Data_clean.RData")
+
 
 ```
+
+#Number of accidents by injury level and aircraft type
+Are airplane or helicopter accidents more fatal?
+```{r}
+#with facet wrap in two separate plots
+data %>% 
+  ggplot(aes(x=InjuryLevel, group=AircraftType)) + 
+  geom_bar(mapping = aes(y=..prop..), stat="count") +
+  coord_flip() +
+  facet_wrap(~ AircraftType)+
+  geom_text(aes(label = scales::percent(..prop..), y= ..prop..), stat= "count", size=3, hjust = -0.2 )  +
+  scale_y_continuous(labels = scales::percent)+
+  labs(x = "Injury Level", y="Percentage")
+
+#in a stacked bar plot
+data %>% 
+  ggplot(aes(x=InjuryLevel, group=AircraftType, fill=AircraftType)) + 
+  geom_bar(mapping = aes(y=..prop..), stat="count") +
+  coord_flip() +
+  geom_text(aes(label = scales::percent(..prop..), y= ..prop..), stat= "count", size=3,position=position_stack(vjust=0.5))  +
+  scale_y_continuous(labels = scales::percent)+
+  labs(title = "Proportion of accidents for each injury level by aircraft type",x = "Injury Level", y="Percentage")
+
+
+#in a stacked bar plot
+data %>% 
+  ggplot(aes(x=InjuryLevel, group=AircraftType, fill=AircraftType)) + 
+  geom_bar(mapping = aes(y=..prop..), stat="count") +
+  coord_flip() +
+  geom_text(aes(label = scales::percent(..prop..), y= ..prop..), stat= "count", size=3,position=position_stack(vjust=0.5))  +
+  scale_y_continuous(labels = scales::percent)+
+  labs(title = "Proportion of accidents for each injury level by aircraft type",x = "Injury Level", y="Percentage")
+
+
+data %>% 
+  ggplot(aes(x=InjuryLevel, group=AircraftType, fill=AircraftType)) + 
+  geom_bar(mapping = aes(y=..count../sum(..count..)), stat="count") +
+  coord_flip() +
+  geom_text(aes(label = scales::percent(..count../sum(..count..)), y= ..count../sum(..count..)), stat= "count", size=3,position=position_stack(vjust=0.5))  +
+  scale_y_continuous(labels = scales::percent)+
+  labs(title = "Proportion of accidents for each injury level by aircraft type",x = "Injury Level", y="Percentage")
+
+
+```
+
+
 
 ```{r}
-# frequency of accidents in each flight pahse grouped by InjuryLevel
-ggplot(data = data[data$InjuryLevel %in% c("Fatal", "Minor", "Serious", "None", "Unknown"),], aes(x=FlightPhase, group=InjuryLevel)) + 
-  geom_bar(aes(y = (..count..)/sum(..count..)))+
-  coord_flip() +
-  scale_y_continuous(labels=scales::percent,limits=c(0,0.16))+
-  geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
-                   y= (..count..)/sum(..count..) ), stat= "count", hjust =-0.25 )+
-  facet_wrap(~ InjuryLevel)+
-  labs(x = "Flight Phase", y="Percentage")
+# # frequency of accidents in each flight pahse grouped by InjuryLevel
+# ggplot(data = data[data$InjuryLevel %in% c("Fatal", "Minor", "Serious", "None", "Unknown"),], aes(x=FlightPhase, group=InjuryLevel)) + 
+#   geom_bar(aes(y = (..count..)/sum(..count..)))+
+#   coord_flip() +
+#   scale_y_continuous(labels=scales::percent,limits=c(0,0.16))+
+#   geom_text(aes( label = scales::percent((..count..)/sum(..count..)),
+#                    y= (..count..)/sum(..count..) ), stat= "count", hjust =-0.25 )+
+#   facet_wrap(~ InjuryLevel)+
+#   labs(x = "Flight Phase", y="Percentage")
 
 
 
 ```
+
 ```{r}
 #order of the legend could be changed here is my proposition of a graph. The bad thing is that they are faced wraped but the frequencies are for whole dataset 
 data %>% ggplot( aes(x=FlightPhase, fill=InjuryLevel)) + 
-  geom_bar(aes(y = (..count..)/sum(..count..)),position = "dodge") +scale_y_continuous(labels=scales::percent)+facet_wrap(~AircraftType,scales = "free_y")+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),panel.grid.major = element_line(colour = "grey"),panel.grid.minor = element_line(colour = "grey"),panel.grid.major.x = element_blank(),
-  panel.grid.minor.x = element_blank()
-, panel.background = element_blank())
+  geom_bar(aes(y = ..count../sum(..count..)),position = "dodge",stat="count")+
+  scale_y_continuous(labels=scales::percent)+
+  facet_wrap(~AircraftType,scales = "free_y")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid.major = element_line(colour = "grey"),
+        panel.grid.minor = element_line(colour = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.background = element_blank())+
+  coord_flip()
+
+# data %>% ggplot( aes(x=factor(FlightPhase, FlightPhase.order.ap), group=AircraftType, fill=InjuryLevel)) +
+#   geom_bar(aes(y = ..prop..),position = "stack",stat="count")+
+#   scale_y_continuous(labels=scales::percent)+
+#   facet_wrap(~AircraftType)+ #scales = "free_y"
+#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+#         panel.grid.major = element_line(colour = "grey"),
+#         panel.grid.minor = element_line(colour = "grey"),
+#         panel.grid.major.x = element_blank(),
+#         panel.grid.minor.x = element_blank(),
+#         panel.background = element_blank())+
+#   coord_flip()
+
+
+# data %>%subset(AircraftType=="Airplane") %>% 
+#   ggplot( aes(x=factor(FlightPhase, FlightPhase.order.ap), fill=InjuryLevel)) + 
+#   geom_bar(aes(y = ..count../sum(..count..)),position = "dodge",stat="count")+
+#   scale_y_continuous(labels=scales::percent)+
+#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+#         panel.grid.major = element_line(colour = "grey"),
+#         panel.grid.minor = element_line(colour = "grey"),
+#         panel.grid.major.x = element_blank(),
+#         panel.grid.minor.x = element_blank(),
+#         panel.background = element_blank())+
+#   coord_flip()
+
+data %>%subset(AircraftType=="Airplane", select=c("FlightPhase", "InjuryLevel")) %>% table()
+
+#all 5 injury categories
+data %>%subset(AircraftType=="Airplane") %>% 
+  ggplot( aes(x=factor(FlightPhase, FlightPhase.order.ap), fill=InjuryLevel)) + 
+  geom_bar(aes(y = ..count../sum(..count..)),stat="count")+
+  coord_flip()+
+  scale_y_continuous(labels = scales::percent)+
+  labs(title="Proportion of accidents of airplanes per flight phase and injury level" ,x = "Flight Phase", y="Percentage")
+
+data %>%subset(AircraftType=="Helicopter") %>% 
+  ggplot( aes(x=factor(FlightPhase, FlightPhase.order.hel), fill=InjuryLevel)) + 
+  geom_bar(aes(y = ..count../sum(..count..)),stat="count")+
+  coord_flip()+
+  scale_y_continuous(labels = scales::percent)+
+  labs(title="Proportion of accidents of helicopters per flight phase and injury level",x = "Flight Phase", y="Percentage")
+
+
+
+#only fatal, non-fatal, and unknown
+data %>%subset(AircraftType=="Airplane") %>% 
+  mutate(InjuryLevel=case_when(! InjuryLevel %in% c("Fatal", "Unknown") ~ "Non-Fatal",
+                                 InjuryLevel=="Unknown" ~ "Unknown",
+                                 InjuryLevel=="Fatal" ~ "Fatal"
+                               )) %>% 
+  ggplot( aes(x=factor(FlightPhase, FlightPhase.order.ap), group=InjuryLevel, fill=InjuryLevel)) + 
+  geom_bar(aes(y = ..prop..),stat="count")+
+  coord_flip()+
+  scale_y_continuous(labels = scales::percent)+
+  labs(title="Proportion of accidents of airplanes per flight phase and injury level" ,x = "Flight Phase", y="Percentage")+
+   geom_text(aes(label = scales::percent(..prop..), y= ..prop..), stat= "count", size=2, position = position_stack(vjust=0.5)) 
+
+
+# what's the differenbce between ..prop.. and ..count../sum(..count..)
+data %>%subset(AircraftType=="Airplane") %>% 
+  mutate(InjuryLevel=case_when(! InjuryLevel %in% c("Fatal", "Unknown") ~ "Non-Fatal",
+                                 InjuryLevel=="Unknown" ~ "Unknown",
+                                 InjuryLevel=="Fatal" ~ "Fatal"
+                               )) %>% 
+  ggplot( aes(x=factor(FlightPhase, FlightPhase.order.ap), group=InjuryLevel, fill=InjuryLevel)) + 
+  geom_bar(aes(y = ..count../sum(..count..)),stat="count")+
+  coord_flip()+
+  scale_y_continuous(labels = scales::percent)+
+  labs(title="Proportion of accidents of airplanes per flight phase and injury level" ,x = "Flight Phase", y="Percentage")+
+   geom_text(aes(label = scales::percent(..count../sum(..count..)), y= ..count../sum(..count..)), stat= "count", size=2, position = position_stack(vjust=0.5))
+
+
+subset(data, AircraftType=="Airplane"& FlightPhase=="Landing") %>% 
+  group_by(InjuryLevel) %>% 
+  summarise(n=n(),
+            prop=n/1723
+            )
+#check
+subset(data, AircraftType=="Airplane" & FlightPhase=="En route" & InjuryLevel=="Fatal") %>% nrow / subset(data, AircraftType=="Airplane") %>% nrow()
+
 ```
 
 
 ```{r}
-ggplot(data = data, aes(x=FlightPhase, group=WeightCat)) + 
+data %>%subset(AircraftType=="Airplane") %>%  ggplot(aes(x=factor(FlightPhase, FlightPhase.order.ap), group=WeightCat)) + 
   geom_bar(mapping = aes(y=..prop..), stat="count") +
   coord_flip() +
   facet_wrap(~ WeightCat)+
@@ -150,7 +302,9 @@ data_ac_ct
 ```{r}
 data_ac_ct %>% ggplot(aes(x=Year, y=count,color=AircraftType)) + 
   geom_line() +
-  labs(x = "Year", y="Count")+theme_minimal()+ ggtitle("The accident count")
+  labs(x = "Year", y="Count")+
+  theme_minimal()+
+  ggtitle("Accident count per year for airplanes and helicopters")
 
 #there was a major drop in the number of accidents from 2012 onwards, so maybe split the data to before and after 2012 and investigate what else changed
 ```
@@ -176,4 +330,112 @@ data %>%subset(AircraftType=="Airplane" & InjuryLevel=="Fatal") %>% group_by(Eng
 data %>%subset(AircraftType=="Airplane" & InjuryLevel=="Fatal"& Engines<6) %>% ggplot(aes(x=as.factor(Engines),y=Fatalities))+geom_boxplot()+geom_jitter()+theme_minimal() 
 
 ```
+
+#CLEAN
+#2. Fatality Analysis
+
+# 2.1 How frequent is each injury level overall? (no cateogries)
+
+
+```{r}
+
+#all 5 injury categories
+data  %>% 
+  ggplot(aes(x=factor(InjuryLevel,
+                      c("Unknown", "None","Minor", "Serious",  "Fatal")))) + 
+  geom_bar(aes(y = ..count../sum(..count..)),
+           stat="count")+
+  coord_flip()+
+  scale_y_continuous(#breaks = round(seq(0, 0.45, by = 0.05),2),
+                     labels = scales::percent)+
+  ylim(0,0.4)+
+  labs(title="Proportion of accidents that occured per flight phase " ,x = "Flight Phase", y="Percentage")+
+  geom_text(aes(label = scales::percent(..count../sum(..count..), accuracy = 0.1),
+                y= ..count../sum(..count..)),
+            stat= "count", size=3.5,hjust =-0.2 )
+
+
+```
+# 2.2. Are airplane or helicopter accidents more fatal?
+
+```{r}
+
+#number of airplane accidents = 5696
+n.ap<-data %>%subset(AircraftType=="Airplane") %>% nrow()
+#number of helicopter accidents = 413
+n.h<-data %>%subset(AircraftType=="Helicopter") %>% nrow()
+
+#all 5 injury categories
+data %>%subset(select=c("AircraftType", "InjuryLevel")) %>% table() / c(5696,413)
+
+# Fatal x Airplane = 0.17
+1012/5696
+# Fatal x Helicopter = 0.41
+171/413
+
+
+data  %>% 
+  ggplot(aes(x=factor(InjuryLevel,
+                      c("Unknown", "None","Minor", "Serious",  "Fatal")),
+             group=AircraftType,
+             fill=AircraftType
+             )) + 
+  geom_bar(aes(y = ..prop..),
+           position = "dodge"
+           )+
+  coord_flip()+
+  labs(title="Proportion of accidents per injury level for airplanes and helicopters",
+       x= "Injury Level",
+       y="Proportion conditional on aircrft type")+
+  scale_y_continuous(#breaks = round(seq(0, 0.45, by = 0.05),2),
+                    labels = scales::percent
+                     )+
+  geom_text(aes(label = scales::percent(..prop.., accuracy = 0.1), y= ..prop..), stat= "count", size=3, position = position_dodge(width = 1),hjust =+1.3 )
+  
+ 
+```
+
+# 2.3 Which flight phases are most dangerous?
+
+
+```{r}
+data<-data %>% 
+  mutate(InjuryLevel_3 =
+           case_when(!InjuryLevel %in% c("Fatal", "Unknown") ~ "Non-Fatal",
+                                 InjuryLevel=="Unknown" ~ "Unknown",
+                                 InjuryLevel=="Fatal" ~ "Fatal"
+                               ))
+
+#for airplanes
+a<-data %>%subset(AircraftType=="Airplane") %>% 
+  ggplot( aes(x=factor(FlightPhase, FlightPhase.order.ap), group=InjuryLevel_3,
+              fill=InjuryLevel_3)) + 
+  geom_bar(aes(y = ..count../sum(..count..)),stat="count")+
+  coord_flip()+
+  scale_y_continuous(breaks = round(seq(0, 0.45, by = 0.05),2),
+                     labels = scales::percent, limits = c(0,0.37))+
+  labs(title="Airplanes" ,
+       x = "Flight Phase", y="Percentage",
+       fill="Injury Level")
+
+#for helicopters
+h<-data %>%subset(AircraftType=="Helicopter") %>% 
+  ggplot( aes(x=factor(FlightPhase, FlightPhase.order.hel), group=InjuryLevel_3,
+              fill=InjuryLevel_3)) + 
+  geom_bar(aes(y = ..count../sum(..count..)),stat="count")+
+  coord_flip()+
+  scale_y_continuous(breaks = round(seq(0, 0.45, by = 0.05),2),
+                     labels = scales::percent,limits = c(0,0.37))+
+  labs(title="Helicopters" ,
+       x = "Flight Phase", y="Percentage",
+       fill="Injury Level")
+
+axh<-ggarrange(a,h, common.legend = TRUE,legend = "bottom", labels = c("a)", "b)") )
+annotate_figure(axh, 
+                top=text_grob("Proportion of accidents per flight phase and injury level for each aircraft type",
+                              face="bold", size=13.5))
+
+```
+
+
 
